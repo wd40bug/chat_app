@@ -5,7 +5,7 @@ use async_std::{
     task,
 };
 use futures::{select, FutureExt};
-use std::io::{self};
+use std::io;
 
 fn main() -> io::Result<()> {
     task::block_on(try_run())
