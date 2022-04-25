@@ -26,13 +26,13 @@ fn accept_loop(addr: impl ToSocketAddrs) -> Result<()> {
 async fn handle_client(stream: TcpStream) -> Result<()> {
     let mut writer = &stream;
     let reader = BufReader::new(&stream);
-    let mut lines = reader.lines();
+    let mut messages = reader.split(0x04);
     println!("accepted {}", stream.peer_addr()?);
-    while let Some(line) = lines.next().await {
+    while let Some(line) = messages.next().await {
         let line = line?;
-        println!("{}", &line);
-        writer.write_all(line.as_bytes()).await?;
-        writer.write_all(b"\n").await?;
+        println!("{}", &line.iter().map(|c| *c as char).collect::<String>());
+        writer.write_all(&line).await?;
+        writer.write_all(&[0x04]).await?;
     }
     Ok(())
 }
@@ -46,4 +46,8 @@ where
             eprintln!("{}", e);
         }
     })
+}
+
+async fn writer_loop(mut writer: &TcpStream) -> Result<()> {
+    todo!()
 }

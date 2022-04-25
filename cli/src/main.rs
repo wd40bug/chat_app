@@ -13,13 +13,13 @@ fn main() -> io::Result<()> {
 async fn try_run() -> io::Result<()> {
     let stream = TcpStream::connect("127.0.0.1:8080").await?;
     let (reader, mut writer) = (&stream, &stream);
-    let mut lines_from_server = BufReader::new(reader).lines().fuse();
+    let mut lines_from_server = BufReader::new(reader).split(0x04).fuse();
     let mut lines_from_stdin = BufReader::new(stdin()).lines().fuse();
     loop {
         select! {
             line = lines_from_server.next().fuse()=> match line{
                 Some(line)=>{
-                    let line = line?;
+                    let line = line?.iter().map(|b| *b as char).collect::<String>();
                     println!("{}",line);
                 }
                 None=>break,
@@ -28,7 +28,7 @@ async fn try_run() -> io::Result<()> {
                 Some(line)=>{
                     let line = line?;
                     writer.write_all(line.as_bytes()).await?;
-                    writer.write_all(b"\n").await?;
+                    writer.write_all(&[0x04]).await?;
                 }
                 None=>break,
             }
