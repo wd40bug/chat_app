@@ -1,4 +1,4 @@
-use std::net::{TcpListener, ToSocketAddrs};
+use std::{ net::{TcpListener, ToSocketAddrs}, sync::Arc };
 
 use async_std::{
     io::{prelude::BufReadExt, BufReader, WriteExt},
@@ -6,9 +6,10 @@ use async_std::{
     prelude::StreamExt,
     task::{self, JoinHandle},
 };
-use futures::Future;
-
+use futures::{Future,channel::mpsc,sink::SinkExt};
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+type Reciever<T> = mpsc::UnboundedReceiver<T>;
+type Sender<T> = mpsc::UnboundedSender<T>;
 
 fn main() {
     accept_loop("127.0.0.1:8080").unwrap();
@@ -20,9 +21,9 @@ fn accept_loop(addr: impl ToSocketAddrs) -> Result<()> {
     while let Some(Ok(result)) = incoming.next() {
         let _handle = spawn_and_log_error(handle_client(TcpStream::from(result)));
     }
-    Err("incoming.next returned a None(documentation says is impossible)")?
+    #[allow(clippy::try_err)]
+    Err("incoming.next() returned a None(documentation says is impossible)")?
 }
-
 async fn handle_client(stream: TcpStream) -> Result<()> {
     let mut writer = &stream;
     let reader = BufReader::new(&stream);
@@ -48,6 +49,10 @@ where
     })
 }
 
-async fn writer_loop(mut writer: &TcpStream) -> Result<()> {
-    todo!()
+async fn writer_loop(mut messages: Reciever<String>, stream: Arc<TcpStream>) -> Result<()> {
+    let mut stream = &*stream;
+    while let Some(message) = messages.next().await{
+        stream.write_all(message.as_bytes()).await?;
+    }
+    Ok(())
 }
