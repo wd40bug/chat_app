@@ -27,6 +27,7 @@ async fn try_run() -> io::Result<()> {
             line = lines_from_stdin.next().fuse() => match line{
                 Some(line)=>{
                     let line = line?;
+                    let line = format!("{0}{1}{2}{1}{3}","William",0x03 as char,"None",line);
                     writer.write_all(line.as_bytes()).await?;
                     writer.write_all(&[0x04]).await?;
                 }
