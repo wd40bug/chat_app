@@ -10,7 +10,7 @@ impl From<String> for Message {
         let vec = str.split(0x03 as char).collect::<Vec<&str>>();
         Message {
             from: vec[0].to_string(),
-            to: vec[1].split(0x03 as char).map(|s| s.to_string()).collect(),
+            to: vec[1].split(0x04 as char).map(|s| s.to_string()).collect(),
             msg: vec[2].to_string(),
         }
     }

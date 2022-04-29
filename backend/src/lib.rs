@@ -42,14 +42,14 @@ pub fn accept_loop(addr: impl ToSocketAddrs) -> Result<()> {
 async fn handle_client(stream: TcpStream) -> Result<()> {
     let mut writer = &stream;
     let reader = BufReader::new(&stream);
-    let mut messages = reader.split(0x04);
+    let mut messages = reader.split(0x17);
     println!("accepted {}", stream.peer_addr()?);
     while let Some(line) = messages.next().await {
         let line = line?.iter().map(|c| *c as char).collect::<String>();
         let message = Message::from(line);
         println!("{}", message);
         writer.write_all(message.msg.as_bytes()).await?;
-        writer.write_all(&[0x04]).await?;
+        writer.write_all(&[0x17]).await?;
     }
     Ok(())
 }
