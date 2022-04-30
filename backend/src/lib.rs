@@ -12,17 +12,19 @@ use async_std::{
     prelude::StreamExt,
     task::{self, JoinHandle},
 };
-use futures::{channel::mpsc, sink::SinkExt, Future};
+use futures::{channel::mpsc, select, sink::SinkExt, Future, FutureExt};
 
 use crate::message::Message;
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 type Reciever<T> = mpsc::UnboundedReceiver<T>;
 type Sender<T> = mpsc::UnboundedSender<T>;
 
+enum Void {}
 enum Event {
     NewPeer {
         name: String,
         stream: Arc<TcpStream>,
+        shutdown: Reciever<Void>,
     },
     Message(Message),
 }
@@ -38,6 +40,7 @@ pub fn accept_loop(addr: impl ToSocketAddrs) -> Result<()> {
             TcpStream::from(result),
         ));
     }
+    drop(broker_sender);
     Err("incoming.next() returned a None(documentation says is impossible)")?
 }
 async fn handle_client(mut broker: Sender<Event>, stream: TcpStream) -> Result<()> {
@@ -48,10 +51,12 @@ async fn handle_client(mut broker: Sender<Event>, stream: TcpStream) -> Result<(
         Some(name) => name?.iter().map(|c| *c as char).collect::<String>(),
         None => Err("Client disconnected immediately")?,
     };
+    let (_shutdown_sender, shutdown_reciever) = mpsc::unbounded();
     broker
         .send(Event::NewPeer {
             name,
             stream: Arc::clone(&stream),
+            shutdown: shutdown_reciever,
         })
         .await
         .unwrap();
@@ -74,38 +79,87 @@ where
     })
 }
 
-async fn writer_loop(mut messages: Reciever<String>, stream: Arc<TcpStream>) -> Result<()> {
+async fn writer_loop(
+    messages: &mut Reciever<String>,
+    stream: Arc<TcpStream>,
+    shutdown: Reciever<Void>,
+) -> Result<()> {
     let mut stream = &*stream;
-    while let Some(message) = messages.next().await {
-        stream.write_all(message.as_bytes()).await?;
-        stream.write_all(&[0x17]).await?;
+    let mut messages = messages.fuse();
+    let mut shutdown = shutdown.fuse();
+    // while let Some(message) = messages.next().await {
+    //     stream.write_all(message.as_bytes()).await?;
+    //     stream.write_all(&[0x17]).await?;
+    // }
+    loop {
+        select! {
+            msg = messages.next().fuse() => match msg{
+                Some(msg)=>{
+                    stream.write_all(msg.as_bytes()).await?;
+                    stream.write_all(&[0x17]).await?;
+                }
+                None=>break,
+            },
+            void = shutdown.next().fuse() => match void {
+                Some(void)=>match void{},
+                None=>break,
+            }
+        }
     }
     Ok(())
 }
 
-async fn broker_loop(mut events: Reciever<Event>) -> Result<()> {
+async fn broker_loop(events: Reciever<Event>) {
+    let (disconnect_sender, mut disconnect_receiver) =
+        mpsc::unbounded::<(String, Reciever<String>)>();
     let mut peers: HashMap<String, Sender<String>> = HashMap::new();
-    while let Some(event) = events.next().await {
+    let mut events = events.fuse();
+    loop {
+        let event = select! {
+            event = events.next().fuse() => match event {
+                None=>break,
+                Some(event)=>event,
+            },
+            disconnect = disconnect_receiver.next().fuse() => {
+                let (name, _pending_messages) = disconnect.unwrap();
+                assert!(peers.remove(&name).is_some());
+                continue;
+            }
+        };
         match event {
             Event::Message(Message { from, to, msg }) => {
                 for addr in to {
                     if let Some(peer) = peers.get_mut(&addr) {
                         let message = format!("{}: {}", from, msg);
-                        peer.send(message).await?
+                        peer.send(message).await.unwrap();
                     } else {
                         println!("person unknown {}", addr)
                     }
                 }
             }
-            Event::NewPeer { name, stream } => match peers.entry(name) {
+            Event::NewPeer {
+                name,
+                stream,
+                shutdown,
+            } => match peers.entry(name.clone()) {
                 Entry::Occupied(..) => (),
                 Entry::Vacant(entry) => {
-                    let (client_sender, client_reciever) = mpsc::unbounded();
+                    let (client_sender, mut client_reciever) = mpsc::unbounded();
                     entry.insert(client_sender);
-                    spawn_and_log_error(writer_loop(client_reciever, stream));
+                    let mut disconnect_sender = disconnect_sender.clone();
+                    spawn_and_log_error(async move {
+                        let res = writer_loop(&mut client_reciever, stream, shutdown).await;
+                        disconnect_sender
+                            .send((name, client_reciever))
+                            .await
+                            .unwrap();
+                        res
+                    });
                 }
             },
         }
     }
-    Ok(())
+    drop(peers);
+    drop(disconnect_sender);
+    while let Some((_name, _pending_messages)) = disconnect_receiver.next().await {}
 }
