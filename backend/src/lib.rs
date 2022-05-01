@@ -1,5 +1,3 @@
-mod message;
-
 use std::{
     collections::{hash_map::Entry, HashMap},
     net::{TcpListener, ToSocketAddrs},
@@ -13,8 +11,8 @@ use async_std::{
     task::{self, JoinHandle},
 };
 use futures::{channel::mpsc, select, sink::SinkExt, Future, FutureExt};
+use shared::message::Message;
 
-use crate::message::Message;
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 type Reciever<T> = mpsc::UnboundedReceiver<T>;
 type Sender<T> = mpsc::UnboundedSender<T>;
@@ -62,7 +60,7 @@ async fn handle_client(mut broker: Sender<Event>, stream: TcpStream) -> Result<(
         .unwrap();
     while let Some(msg) = messages.next().await {
         let message = msg?.iter().map(|c| *c as char).collect::<String>();
-        let msg = Message::from(message);
+        let msg = serde_json::from_str(&message)?;
         broker.send(Event::Message(msg)).await.unwrap();
     }
     Ok(())
