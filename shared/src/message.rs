@@ -10,12 +10,7 @@ pub struct Message {
 }
 impl Display for Message {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut adresses = String::new();
-        for addr in &self.to {
-            adresses += addr;
-            adresses += ", ";
-        }
-        write!(f, "{}->{}: {}", self.from, adresses, self.msg)
+        write!(f, "->{} :  {}", self.from, self.msg)
     }
 }
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -39,5 +34,15 @@ impl Display for Part {
             Part::Text(s) => s,
         };
         write!(f, "{}", result)
+    }
+}
+impl From<String> for Part {
+    fn from(str: String) -> Self {
+        Part::Text(str)
+    }
+}
+impl From<String> for Parts {
+    fn from(str: String) -> Self {
+        Self(vec![Part::from(str)])
     }
 }

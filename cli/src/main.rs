@@ -5,7 +5,10 @@ use async_std::{
     task,
 };
 use futures::{select, FutureExt};
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+use shared::{
+    message::{Message, Parts},
+    Result,
+};
 fn main() {
     task::block_on(try_run()).unwrap()
 }
@@ -29,15 +32,21 @@ async fn try_run() -> Result<()> {
             line = lines_from_server.next().fuse()=> match line{
                 Some(line)=>{
                     let line = line?.iter().map(|b| *b as char).collect::<String>();
-                    println!("{}",line);
+                    let msg: Message = serde_json::from_str(&line)?;
+                    println!("{}",msg);
                 }
                 None=>break,
             },
             line = lines_from_stdin.next().fuse() => match line{
                 Some(line)=>{
                     let line = line?;
-                    let line = format!("{0}{1}{2}{1}{3}",name,0x03 as char,to,line);
-                    writer.write_all(line.as_bytes()).await?;
+                    let msg = Message{
+                        from: name.clone(),
+                        to: to.split(",").map(|c| c.to_owned()).collect(),
+                        msg: Parts::from(line)
+                    };
+                    let ser = serde_json::ser::to_string(&msg)?;
+                    writer.write_all(ser.as_bytes()).await?;
                     writer.write_all(&[0x17]).await?;
                 }
                 None=>break,

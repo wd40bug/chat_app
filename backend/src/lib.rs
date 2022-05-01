@@ -11,9 +11,8 @@ use async_std::{
     task::{self, JoinHandle},
 };
 use futures::{channel::mpsc, select, sink::SinkExt, Future, FutureExt};
-use shared::message::Message;
+use shared::{message::Message, Result};
 
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 type Reciever<T> = mpsc::UnboundedReceiver<T>;
 type Sender<T> = mpsc::UnboundedSender<T>;
 
@@ -125,11 +124,11 @@ async fn broker_loop(events: Reciever<Event>) {
             }
         };
         match event {
-            Event::Message(Message { from, to, msg }) => {
-                for addr in to {
-                    if let Some(peer) = peers.get_mut(&addr) {
-                        let message = format!("{}: {}", from, msg);
-                        peer.send(message).await.unwrap();
+            Event::Message(message) => {
+                for addr in &message.to {
+                    if let Some(peer) = peers.get_mut(addr) {
+                        let msg = serde_json::ser::to_string(&message).unwrap();
+                        peer.send(msg).await.unwrap();
                     } else {
                         println!("person unknown {}", addr)
                     }
