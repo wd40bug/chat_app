@@ -5,10 +5,8 @@ use async_std::{
     task,
 };
 use futures::{select, FutureExt};
-use shared::{
-    message::{Message, Parts},
-    Result,
-};
+use shared::{message::Message, part::Parts, user::User, Result};
+use uuid::Uuid;
 fn main() {
     task::block_on(try_run()).unwrap()
 }
@@ -41,7 +39,7 @@ async fn try_run() -> Result<()> {
                 Some(line)=>{
                     let line = line?;
                     let msg = Message{
-                        from: name.clone(),
+                        from: User { uuid: Uuid::new_v4().to_string(), name: name.clone() },
                         to: to.split(",").map(|c| c.to_owned()).collect(),
                         msg: Parts::from(line)
                     };
